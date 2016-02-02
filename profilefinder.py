@@ -3,12 +3,10 @@ import sys
 import re
 import urllib
 from urlparse import urlparse
-
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
-
 
 def clean_urls(dirty_url):
 	""" Strip protocol and trailing '/' from blog info profided by GitHub profile"""
@@ -50,10 +48,10 @@ def setup():
 				lst = line.strip().replace('"','').split(',')
 				git_url = "github.com/" + lst[GIT_USERNAME]
 				names.append({'name': unicode(lst[NAME], 'utf-8'),
-				'city': unicode(lst[CITY], 'utf-8'),
-				'company': normalize(unicode(lst[COMPANY], 'utf-8')),
-				'website': clean_urls(unicode(lst[BLOG], 'utf-8')),
-				'github_url': unicode(git_url, 'utf-8')
+					'city': unicode(lst[CITY], 'utf-8'),
+					'company': normalize(unicode(lst[COMPANY], 'utf-8')),
+					'website': clean_urls(unicode(lst[BLOG], 'utf-8')),
+					'github_url': unicode(git_url, 'utf-8')
 				})
 	elif len(sys.argv) > 1 and sys.argv[1] == "-n":
 		# we are looking up a single individual. Details entered at the command line
@@ -95,12 +93,13 @@ def get_list_of_potential_li_profiles(fullname, city):
 		# test each results for exact name match
 		name = result.a.get_text()
 		name_cleaned_up = name[:name.find('|')].strip()
-		if name_cleaned_up == fullname:
+		if normalize(name_cleaned_up) == normalize(fullname):
 			# get the link to this LinkedIn profile
 			match = re.search(url_pattern, result.a['href'])
 			if match:
 				profile_urls.append(match.group(1))
-	
+	#if len(profile_urls) == 0:
+		#print "NO EXACT MATCHES FOUND FOR %s." % fullname
 	return profile_urls
 
 
@@ -123,8 +122,8 @@ def parse_a_li_profile(pub_url, fullname):
 		return page
 	
 	def get_headline():
-		s = soup.find("div", class_="profile-overview").find("p", class_="headline title").string
-		if s:
+		if soup.find("div", class_="profile-overview").find("p", class_="headline title"):
+			s = soup.find("div", class_="profile-overview").find("p", class_="headline title").string
 			at = s.find('at')
 			profile['headline']['title'] = s[:at].strip()
 			profile['headline']['employer'] = s[at + 2:].strip()
@@ -164,12 +163,12 @@ def parse_a_li_profile(pub_url, fullname):
 	
 	
 	profile = { \
-			'name': {},
-			'location': {},
-			'employment': [],
-			'headline': {},
-			'websites': {},
-			'photo': ''}
+		'name': {},
+		'location': {},
+		'employment': [],
+		'headline': {},
+		'websites': {},
+		'photo': ''}
 	
 	page = get_li_public_page(pub_url, fullname)
 	if page:
@@ -187,17 +186,22 @@ def parse_a_li_profile(pub_url, fullname):
 def validate_url(person, data):
 	def test_location():
 		score = 0
-		pass
+		github_location = person.get('city')
+		li_location = data.get('location')
+		if github_location in li_location:
+			#print "Matched location: ", github_location 
+			score = 25
 		return score
 	
 	def test_employment():
 		score = 0
 		job = set([person.get('company')])
+		job.discard(None)	# to avoid a match if both the GiHub and LinkedIn profiles have no employer listed.
 		#print "GitHub profile employer:", job
 		jobs = set(data.get('employment'))
 		#print "LinkedIn profile employers:", jobs
 		if job & jobs:
-			print "Matched this job:", job & jobs
+			#print "Matched this job:", job & jobs
 			score = 50 * len(job & jobs)
 		return score
 	
@@ -205,29 +209,52 @@ def validate_url(person, data):
 		score = 0
 		web = set([person.get('website')])
 		web.add(person.get('github_url'))
-		print "GitHub profile website:", web
+		#print "GitHub profile website:", web
 		webs = set(data.get('websites').values())
-		print "LinkedIn profile websites:", webs
+		#print "LinkedIn profile websites:", webs
 		if web & webs:
-			print "Matched this website:", web & webs
+			#print "Matched this website:", web & webs
 			score = 100 * len(web & webs)
 		return score
 	
 	return sum([test_location(), test_employment(), test_websites()])
 	
 
+
+
 if __name__ == '__main__':
 	
-	people = setup()
-	for person in people:
-		print '\n', person.get('name'), "(" + person.get('city') + ")" + ":"
-		person['urls_to_test'] = get_list_of_potential_li_profiles(person.get('name'), person.get('city'))
-		#print "URLs to test for %s: %s" % (person.get('name'), person.get('urls_to_test'))
-		for url in person['urls_to_test']:
-			data = parse_a_li_profile(url, person.get('name'))
-			if data != -1:
-				score = validate_url(person, data)
-				print url, "(", score, ")"
+	filename = sys.argv[2][:sys.argv[2].rfind('.')]
+	filename = filename + ".log"
+	with open(filename, 'w') as f:
+		people = setup()
+		# Use Google to find potential LinkedIn matches
+		for person in people:
+			person['urls_to_test'] = get_list_of_potential_li_profiles(person.get('name'), person.get('city'))
+			scored_urls = []
+			for url in person['urls_to_test']:
+				data = parse_a_li_profile(url, person.get('name'))
+				if data != -1:
+					score = validate_url(person, data)
+					scored_urls.append({'url': url, 'score': score})
+				else:
+					scored_urls.append({'url': url, 'score': -1})
+			# return highest scoring url
+			sorted_urls = sorted(scored_urls, key =lambda k: k['score'], reverse=True)
+			if len(sorted_urls) != 0:
+				if sorted_urls[0]['score'] >= 75:
+					person['linkedin'] = {'score': sorted_urls[0]['score'], 'url': sorted_urls[0]['url']}
+					msg = "YES (%d): %s" % (person['linkedin'].get('score') ,person.get('name'))
+					f.writelines(msg + '\n')
+					print msg
+				else:
+					#sorted_urls[0]['score'] >= 0:
+					person['linkedin'] = {'score': sorted_urls[0]['score'], 'url': sorted_urls[0]['url']}
+					msg = "MAYBE (%d): %s" % (person['linkedin'].get('score') ,person.get('name'))
+					f.writelines(msg + '\n')
+					print msg
 			else:
-				print url, ": UNABLE TO LOAD URL."
-	
+				person['linkedin'] = {'score': -1, 'url': None}
+				msg = "NO: %s" % person.get('name')
+				f.writelines(msg + '\n')
+				print msg
