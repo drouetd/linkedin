@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import sys
 import re
 import urllib
@@ -10,7 +11,6 @@ from bs4 import BeautifulSoup
 
 def clean_urls(dirty_url):
 	""" Strip protocol and trailing '/' from blog info profided by GitHub profile"""
-	
 	url = urlparse(dirty_url)
 	if url.path == '/':
 		clean_url = url.netloc
