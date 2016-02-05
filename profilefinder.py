@@ -260,16 +260,21 @@ if __name__ == '__main__':
 			
 		# log the results of using Google
 		for dev in devs:
-			if dev['li_matches'][0]['score'] >= 75:
-				msg = "YES (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
-				f.writelines(msg + '\n')
-				print msg
-			elif dev['li_matches'][0]['score'] >= 0:
-				msg = "MAYBE (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
-				f.writelines(msg + '\n')
-				print msg
+			if dev['li_matches']:
+				if dev['li_matches'][0]['score'] >= 75:
+					msg = "YES (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
+					f.writelines(msg + '\n')
+					print msg
+				elif dev['li_matches'][0]['score'] >= 0:
+					msg = "MAYBE (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
+					f.writelines(msg + '\n')
+					print msg
+				else:
+					msg = "NO (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
+					f.writelines(msg + '\n')
+					print msg
 			else:
-				msg = "NO (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
+				msg = "NO (n/a): %s" % dev.get('name')
 				f.writelines(msg + '\n')
 				print msg
 				

@@ -20,8 +20,10 @@ def pipl_search(params):
 		Completes and submits the form, then returns the results page html.
 		"""
 		query = ""
+		#service_args = ['--proxy=1120.52.73.5:8080', '--proxy-type=https']
 		
 		# get the form elements
+		#driver = webdriver.PhantomJS(service_args=service_args)
 		driver = webdriver.PhantomJS()
 		driver.get(url)
 		input_box_all = driver.find_element_by_id("findall")
@@ -100,7 +102,7 @@ if __name__ == "__main__":
 	#parameters = {'email': 'drouetd@gmail.com'}
 	#parameters = {'name': 'daniel drouet', 'location': 'montreal'}
 	parameters = {'email': None}
-	with open('mtl30email.csv', 'r') as csvfile:
+	with open('Data/mtl30email.csv', 'r') as csvfile:
 		f = csv.reader(csvfile)
 		for row in f:
 			parameters['email'] = row[5]
