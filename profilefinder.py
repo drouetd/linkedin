@@ -25,7 +25,8 @@ def clean_urls(dirty_url):
 def normalize(s):
 	# add line to remove accents later using: unicodedata.normalize('NFKD', string)
 	if s:
-		return s.lower()
+		s = s.lower()
+		return s
 	else:
 		return
 
@@ -83,6 +84,7 @@ def get_matching_li_profiles(person):
 	driver = webdriver.PhantomJS()
 	driver.get('http://www.google.com')
 	input_box = driver.find_element_by_name("q")
+	#pdb.set_trace()
 	input_box.send_keys(gh_name + " " + gh_city + " software" + " site:linkedin.com")
 	input_box.submit()
 	try:
@@ -143,6 +145,17 @@ def parse_a_li_profile(pub_url, fullname):
 			profile['employment'].append(profile['headline']['employer'])
 		return
 	
+	def get_canonical_url():
+		if soup.find("link", rel="canonical"):
+			profile['canonical_url'] = soup.find("link", rel="canonical")['href']
+		return
+		
+	
+	def get_name():
+		if soup.find("h1", id="name"):
+			profile['name'] = soup.find("h1", id="name").string
+		return
+	
 	def get_location():
 		loc = soup.find("div", class_="profile-overview").find("span", class_="locality").string
 		profile['location'] = normalize(loc)
@@ -171,22 +184,27 @@ def parse_a_li_profile(pub_url, fullname):
 		jobs = soup.find_all("li", class_="position")
 		for job in jobs:
 			company_name = job.find("h5", class_="item-subtitle", recursive=True).string
-			profile['employment'].append(normalize(company_name))
+			profile['employment'].append(company_name)
 		return
 	
 	
 	# parsed LinkedIn profile will be returned as a dict
-	profile = { 'canonical_url': '','name': {}, 'headline': {},'location': {}, 'photo': '','employment': [],
+	profile = { 'canonical_url': '', 'name': '', 'headline': {},'location': {}, 'photo': '','employment': [],
 				'education': [], 'websites': {}, 'skills':[]}
 	
 	# parse the LinkedIn profile
 	page = get_li_public_page(pub_url, fullname)
 	if page:
 		soup = BeautifulSoup(page, 'html5lib')
-		get_location()
-		get_websites()
+		get_canonical_url()
+		get_name()
 		get_headline()
+		get_location()
+		# get_photo()
 		get_employment()
+		# get_education()
+		get_websites()
+		# get_skills()
 	return profile
 
 
@@ -194,7 +212,7 @@ def evaluate_li_matches(person):
 	""" score each potential match """
 	for match in person['li_matches']:
 		potential_match = parse_a_li_profile(match.get('url'), person.get('name'))
-		if potential_match.get('location'):
+		if potential_match.get('name'):
 			match['score'] = validate_url(person, potential_match)
 			match['parsed_profile'] = potential_match
 		else:
@@ -203,6 +221,7 @@ def evaluate_li_matches(person):
 	# sort from highest scoring match to lowest
 	person['li_matches'] = sorted(person['li_matches'], key =lambda k: k['score'], reverse=True)
 	return dev['li_matches']
+
 
 def validate_url(person, data):
 	def test_location():
@@ -216,10 +235,10 @@ def validate_url(person, data):
 	
 	def test_employment():
 		score = 0
-		job = set([person.get('company')])
+		job = set(map(normalize,[person.get('company')]))
 		job.discard(None)	# to avoid a match if both the GiHub and LinkedIn profiles have no employer listed.
 		#print "GitHub profile employer:", job
-		jobs = set(data.get('employment'))
+		jobs = set(map(normalize,data.get('employment')))
 		#print "LinkedIn profile employers:", jobs
 		if job & jobs:
 			#print "Matched this job:", job & jobs
@@ -241,6 +260,52 @@ def validate_url(person, data):
 	return sum([test_location(), test_employment(), test_websites()])
 
 
+def try_piplsearch(person):
+	dic = {}
+	results = piplsearch.pipl_search({'email': person.get('email')})
+	# if found some LinkedIN profiles, convert to std form
+	for socmedia in [socmedia for socmedia in results if socmedia['site_name']=='LinkedIn']:
+		parsed_profile = parse_a_li_profile(socmedia.get('url'), dev.get('name'))
+		dic = {'url': socmedia.get('url'), 'score': 99, 'parsed_profile': parsed_profile}
+		dev['li_matches'].append(dic)
+	return dic
+
+
+def print_results(devs):	
+	for dev in devs:
+		if dev['li_matches']:
+			if dev['li_matches'][0]['score'] >= 75:
+				msg = "YES (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
+				f.writelines(msg + '\n')
+				print msg
+			elif dev['li_matches'][0]['score'] >= 0:
+				msg = "MAYBE (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
+				f.writelines(msg + '\n')
+				print msg
+			else:
+				msg = "NO (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
+				f.writelines(msg + '\n')
+				print msg
+		else:
+			msg = "NO (n/a): %s" % dev.get('name')
+			f.writelines(msg + '\n')
+			print msg
+	return
+
+
+def check_li_parsing_and_matching(devs):	
+	for dev in devs:
+		print "\nName:", dev['name']
+		print "Company:", dev['company']
+		print "Website:", dev['website']
+		print "Email:", dev['email']
+		for match in dev['li_matches']:
+			if match['parsed_profile']:
+				print "Found LinkedIn websites:", match['parsed_profile']['websites']
+				print "Found LinkedIn employment:", match['parsed_profile']['employment']
+	return
+
+
 
 if __name__ == '__main__':
 	devs, log = setup()
@@ -258,48 +323,35 @@ if __name__ == '__main__':
 			dev['li_matches'] = evaluate_li_matches(dev)
 		print "Done.\n"
 			
-		# log the results of using Google
-		for dev in devs:
-			if dev['li_matches']:
-				if dev['li_matches'][0]['score'] >= 75:
-					msg = "YES (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
-					f.writelines(msg + '\n')
-					print msg
-				elif dev['li_matches'][0]['score'] >= 0:
-					msg = "MAYBE (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
-					f.writelines(msg + '\n')
-					print msg
-				else:
-					msg = "NO (%d): %s" % (dev['li_matches'][0]['score'] ,dev.get('name'))
-					f.writelines(msg + '\n')
-					print msg
-			else:
-				msg = "NO (n/a): %s" % dev.get('name')
-				f.writelines(msg + '\n')
-				print msg
-				
-		"""		
+		# test website parsing
+		#check_li_parsing_and_matching(devs):	
+
 		# Use Pipl to match remainder
-		for person in people:
-			#pdb.set_trace()
-			parameters = {'email': person.get('email')}
-			if not person.get('linkedin'):
-				results = piplsearch.pipl_search(parameters)
-				if any('LinkedIn' in socmedia for socmedia in results):
-					person['linkedin']['url'] = [socmedia['linkedin'] for socmedia in results if 'linkedin' in socmedia]
-					person['linkedin']['score'] = 99
-					print "FOUND LINKEDIN for %s" % person['name']
-				else:
-					print "NO LINKEDIN for %s" % person['name']
+		for dev in [dev for dev in devs if dev['email']]:
+			if dev['li_matches']:
+				if dev['li_matches'][0]['score'] < 75:
+					result = try_piplsearch(dev)
+					if result:
+						dev['li_matches'].append(result)
+						# re-sort from highest scoring match to lowest
+						dev['li_matches'] = sorted(dev['li_matches'], key =lambda k: k['score'], reverse=True)
+			else:
+				result = try_piplsearch(dev)
+				if result:
+					dev['li_matches'].append(result)
+					# re-sort from highest scoring match to lowest
+					dev['li_matches'] = sorted(dev['li_matches'], key =lambda k: k['score'], reverse=True)
+			
+		# See the results of running through both algos
+		print_results(devs)
 					
+		"""
 		# print the results of 
 		print '\n********************\n'
 		print 'RESULTS OF APPLYING TWO MATCHING ALGORITHMS\n'
-		for person in people:
+		for dev in devs:
 			if person['linkedin']:
 				print "YES for %s." % person.get('name')
 			else:
 				print "NO for %s." % person.get('name')
 		"""
-		
-		
