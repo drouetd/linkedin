@@ -137,22 +137,27 @@ def parse_a_li_profile(pub_url, fullname):
 		return page
 	
 	def get_headline():
-		if soup.find("div", class_="profile-overview").find("p", class_="headline title"):
-			s = soup.find("div", class_="profile-overview").find("p", class_="headline title").string
-			at = s.find('at')
-			profile['headline']['full'] = s.strip()
-			profile['headline']['title'] = s[:at].strip()
-			profile['headline']['employer'] = s[at + 2:].strip()
-			
-			# add the employer to profile['employment'] because people sometimes only update their headline.
-			# profile['employment'].append(profile['headline']['employer'])
+		full = ''
+		title = ''
+		employer = ''
+		
+		if soup.find("p", class_="headline title"):
+			headline = soup.find("p", class_="headline title").string
+			if ' at ' in headline:
+				full = headline
+				title, employer = full.split(' at ')
+			else:
+				full = title = headline
+				
+			profile['headline']['full'] = full
+			profile['headline']['title'] = title
+			profile['headline']['employer'] = employer
 		return
 	
 	def get_canonical_url():
 		if soup.find("link", rel="canonical"):
 			profile['canonical_url'] = soup.find("link", rel="canonical")['href']
 		return
-		
 	
 	def get_name():
 		if soup.find("h1", id="name"):
@@ -160,8 +165,8 @@ def parse_a_li_profile(pub_url, fullname):
 		return
 	
 	def get_location():
-		loc = soup.find("div", class_="profile-overview").find("span", class_="locality").string
-		profile['location'] = normalize(loc)
+		if soup.find("span", class_="locality"):
+			profile['location'] = soup.find("span", class_="locality").string
 		return
 	
 	def get_websites():
@@ -190,31 +195,34 @@ def parse_a_li_profile(pub_url, fullname):
 		for job in jobs:
 			position = {'company name': '', 'company page': '', 'company logo': '',
 						'title': '', 'description': '', 'start': '', 'stop': ''}
+			
 			if job.find("h5", class_="item-subtitle"):
 				company_name = job.find("h5", class_="item-subtitle").string
 				position['company name'] = company_name
+			
 			if job.find("h5", class_="item-subtitle").find("a"):
 				company_li_page = job.find("h5", class_="item-subtitle").find("a")['href']
 				position['company page'] = company_li_page
+			
 			if job.find("h5", class_="logo"):
 				company_logo = job.find("h5", class_="logo").find("a")['href']
 				position['company logo'] = company_logo
+			
 			if job.find("h4", class_="item-title"):
 				job_title = job.find("h4", class_="item-title").string
 				position['title'] = job_title
+			
 			if job.find("p", class_="description"):
 				job_description = job.find("p", class_="description").string
 				position['description'] = job_description
+			
 			if job.find("span", class_="date-range"):
-				if job.find("span", class_="date-range").find_all("time"):
-					job_date_range = job.find("span", class_="date-range").find_all("time")
-					if len(job_date_range) == 2:
-						position['start'] = job_date_range[0].string
-						position['stop'] = job_date_range[1].string
-					else:
-						position['start'] = position['stop'] = job_date_range[0].string
-				else:
-					position['start'] = position['stop'] = job.find("span", class_="date-range").string
+				dates = job.find("span", class_="date-range").get_text()
+				start, stop = dates.split(unichr(8211))
+				stop = stop[:stop.find('(')]
+				position['start'] = start.strip()
+				position['stop'] = stop.strip()
+
 			experience.append(position)
 		return experience
 	
@@ -264,7 +272,7 @@ def score_li_matches(gh, li):
 			score = 25
 		return score
 	
-	def test_employment():
+	def test_employment_old():
 		score = 0
 		job = set(map(normalize,[gh.get('company')]))
 		job.discard(None)	# to avoid a match if both the GiHub and LinkedIn profiles have no employer listed.
@@ -276,6 +284,36 @@ def score_li_matches(gh, li):
 		if job & jobs:
 			#print "Matched this job:", job & jobs
 			score = 50 * len(job & jobs)
+		return score
+	
+	def test_employment():
+		score = 0
+		job = ''
+		jobs = []
+		
+		if gh.get('company'):
+			# get company listed in the GitHub profile
+			job  = normalize(gh.get('company'))
+		
+			# match GitHub company against LinkedIn employment history.
+			if li.get('employment'):
+				jobs = map(normalize, [position['company name'] for position in li['employment']])
+				if job in jobs:
+					score += 50
+		
+			# match GitHub company against employer in the Linkedin profile Headline. 
+			if li.get('headline'):
+				if li['headline']['employer']:
+					jobs = normalize(li['headline']['employer'])
+					if job in jobs:
+						score += 50
+					
+		# elif
+			# todo: match email and personal website domain against LinkedIn employment history.
+		else:
+			# we have nothing in GitHub we can use to match agaist LinkedIn employment history.
+			pass
+			
 		return score
 	
 	def test_websites():
