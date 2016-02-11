@@ -8,6 +8,7 @@ from urlparse import urlparse
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from bs4 import BeautifulSoup
 import piplsearch
 import utils
@@ -82,10 +83,14 @@ def get_matching_li_profiles(person):
 	li_profiles = []
 	
 	# perform the Google search
-	driver = webdriver.PhantomJS()
+	dcap = dict(DesiredCapabilities.PHANTOMJS)
+	dcap['phantomjs.page.settings.userAgent'] = (\
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/53 "
+		"(KHTML, like Gecko) Chrome/15.0.87"
+		)
+	driver = webdriver.PhantomJS(desired_capabilities=dcap)
 	driver.get('http://www.google.com')
 	input_box = driver.find_element_by_name("q")
-	#pdb.set_trace()
 	input_box.send_keys(gh_name + " " + gh_city + " software" + " site:linkedin.com")
 	input_box.submit()
 	try:
@@ -96,7 +101,7 @@ def get_matching_li_profiles(person):
 		return
 	finally:
 		driver.quit()
-	
+		
 	# parse the search results
 	url_pattern = re.compile(r'q=(h.+?)&')
 	soup = BeautifulSoup(page, "html5lib")
@@ -122,7 +127,13 @@ def parse_a_li_profile(pub_url, fullname):
 	"""
 	def get_li_public_page(pub_url, fullname):
 		page = ""
-		driver = webdriver.PhantomJS()
+		dcap = dict(DesiredCapabilities.PHANTOMJS)
+		dcap['phantomjs.page.settings.userAgent'] = (\
+			"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/53 "
+			"(KHTML, like Gecko) Chrome/15.0.87"
+			)
+		driver = webdriver.PhantomJS(desired_capabilities=dcap)
+		#driver = webdriver.PhantomJS()
 		driver.get(pub_url)
 		try:
 			WebDriverWait(driver, 5).until(EC.title_contains(fullname))
@@ -222,14 +233,129 @@ def parse_a_li_profile(pub_url, fullname):
 				stop = stop[:stop.find('(')]
 				position['start'] = start.strip()
 				position['stop'] = stop.strip()
-
+				
 			experience.append(position)
 		return experience
 	
+	def get_education():
+		education = []
+		
+		schools = soup.find_all("li", class_="school")
+		for school in schools:
+			edu = {'school name': '', 'school page': '', 'school logo': '',
+						'degree': '', 'description': '', 'start': '', 'stop': ''}
+						
+			if school.find("h4", class_="item-title"):
+				school_name = school.find("h4", class_="item-title").string
+				edu['school name'] = school_name
+				
+			if school.find("h4", class_="item-title").find("a"):
+				school_li_page = school.find("h4", class_="item-title").find("a")['href']
+				edu['school page'] = school_li_page
+				
+			if school.find("h5", class_="logo"):
+				school_logo = school.find("h5", class_="logo").find("a")['href']
+				edu['school logo'] = school_logo
+				
+			if school.find("h5", class_="item-subtitle"):
+				degree = school.find("h5", class_="item-subtitle").string
+				edu['degree'] = degree
+				
+			if school.find("div", class_="description"):
+				school_description = school.find("div", class_="description").find("p").string
+				edu['description'] = school_description
+				
+			if school.find("span", class_="date-range"):
+				dates = school.find("span", class_="date-range").get_text()
+				start, stop = dates.split(unichr(8211))
+				#stop = stop[:stop.find('(')]
+				edu['start'] = start.strip()
+				edu['stop'] = stop.strip()
+				
+			education.append(edu)
+		return education
+	
+	def get_publications():
+		publications =[]
+		
+		pubs = soup.find_all("li", class_="publication")
+		for pub in pubs:
+			publication = {'title': '', 'journal': '', 'date': '', 'description': '', 
+							'contributors': []}
+			
+			if pub.find("h4", class_="item-title"):
+				publication['title'] = pub.find("h4", class_="item-title").string
+				
+			if pub.find("h5", class_="item-subtitle"):
+				publication['journal'] = pub.find("h5", class_="item-subtitle").string
+				
+			if pub.find("span", class_="date-range"):
+				publication['date'] = pub.find("span", class_="date-range").find("time").string
+				
+			if pub.find("p",class_="description"):
+				text = pub.find("p", class_="description").string
+				publication['description'] =  text
+				
+			if pub.find_all("li", class_="contributor"):
+				contributors = pub.find_all("li", class_="contributor")
+				for contributor in contributors:
+					if contributor.string:
+						publication['contributors'].append(contributor.string)
+					if contributor.find("a"):
+						publication['contributors'].append(contributor.find("a").string)
+			
+			publications.append(publication)
+		return publications
+	
+	def get_photo():
+		photo_url = ''
+		if soup.find("img", class_="image photo lazy-loaded"):
+			photo_url = soup.find("img", class_="image photo lazy-loaded")['src']
+		return photo_url
+	
+	def get_languages():
+		languages =[]
+		langs = soup.find_all("li", class_="language")
+		for lang in langs:
+			language ={'name': '', 'proficiency': ''}
+			
+			if lang.find("h4", class_="name"):
+				language['name'] = lang.find("h4", class_="name").string
+			
+			if lang.find("p", class_="proficiency"):
+				language['proficiency'] = lang.find("p", class_="proficiency").string
+			
+			languages.append(language)
+		return languages
+	
+	def get_skills():
+		skills_list = []
+		skills = soup.find_all("li", class_="skill")
+		#skills.extend(soup.find_all("li", class_="skill extra"))
+		for skill in skills:
+			if skill.find("a"):
+				skills_list.append(skill.a['title'])
+		return skills_list
+	
+	def get_summary():
+		pdb.set_trace()
+		summary = ''
+		if soup.find("section", id="summary"):
+			summary = soup.find("section", id="summary").p.string
+		return summary
+	
+	def get_recommendation():
+		recommendations = []
+		recs = soup.find_all("li", class_="recommendation-container")
+		for rec in recs:
+			if rec.find("blockquote", class_="recommendation"):
+				recommendations.append(rec.blockquote.string)
+		return recommendations
 	
 	# parsed LinkedIn profile will be returned as a dict
-	profile = { 'canonical_url': '', 'name': '', 'headline': {},'location': {}, 'photo': '','employment': [],
-				'education': [], 'websites': {}, 'skills':[]}
+	profile = { 'canonical_url': '', 'name': '', 'headline': {},'location': {}, 
+				'photo_url': '','employment': [], 'education': [], 'publications': [], 
+				'websites': {}, 'skills':[], 'languages': [], 'summary': ''}
 	
 	# parse the LinkedIn profile
 	page = get_li_public_page(pub_url, fullname)
@@ -239,13 +365,15 @@ def parse_a_li_profile(pub_url, fullname):
 		get_name()
 		get_headline()
 		get_location()
-		# get_photo()
+		profile['photo_url'] = get_photo()
 		profile['employment'] = get_employment()
-		# get_education()
+		profile['education'] = get_education()
 		get_websites()
-		# get_skills()
-		# get summary
-		# get_recommendations
+		profile['publications'] = get_publications()
+		profile['languages'] = get_languages()
+		profile['skills'] = get_skills()
+		# profile['summary'] = get_summary()
+		# get_recommendations()
 	return profile
 
 
