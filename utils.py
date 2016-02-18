@@ -1,21 +1,68 @@
 #!/usr/bin/env python
 # filename = utils.py
 
-import pickle
+import sys
 import json
+import csv
+from urlparse import urlparse
 
-def pickle_data(data, filename):
-	fname = filename + '.pkl'
-	with open(fname, 'wb') as f:
-		pickle.dump(data, f)
-	return
+def clean_urls(dirty_url):
+	""" Strip protocol and trailing '/' from blog info profided by GitHub profile"""
+	url = urlparse(dirty_url)
+	if url.path == '/':
+		clean_url = url.netloc
+	else:
+		clean_url = url.netloc + url.path
+	return clean_url
 
 
-def unpickle_data(filename):
-	fname = filename + '.pkl'
-	with open(fname, 'rb') as f:
-		data = pickle.load(f)
-	return data
+def normalize(s):
+	# add line to remove accents later using: unicodedata.normalize('NFKD', string)
+	if s:
+		s = s.lower()
+		return s
+	else:
+		return
+
+
+
+def setup():
+	"""
+	Parses the arguments and returns a list of dictionaries. Each dictionary
+	contains name, location, company and website of a person to look up.
+	""" 
+	NAME = 0
+	CITY = 1
+	COMPANY = 2
+	BLOG = 3
+	GIT_USERNAME = 4
+	EMAIL =5
+	gh_profiles = []
+	
+	if len(sys.argv) > 1 and sys.argv[1] == "-f":
+		# load profiles from a CSV file
+		with open(sys.argv[2], 'r') as csvfile:
+			f = csv.reader(csvfile)
+			for row in f:
+				git_url = "github.com/" + row[GIT_USERNAME]
+				gh_profiles.append({'name': row[NAME],
+					'city': normalize(row[CITY]),
+					'company': row[COMPANY],
+					'website': clean_urls(row[BLOG]),
+					'github_url': git_url,
+					'email': row[EMAIL]
+				})
+	elif len(sys.argv) > 1 and sys.argv[1] == "-n":
+		# we are looking up a single individual. Details entered at the command line
+		pass 
+	else:
+		print('Usage:\n $ profilefinder.py -f filename #file must be in CSV format.\n $ profilefinder.py -n [name="first last" location="city" company="company name", blog="url"]')
+	
+	# specify the log file
+	filename = sys.argv[2][:sys.argv[2].rfind('.')]
+	logfile = filename + ".log"
+	
+	return gh_profiles, logfile
 
 
 def save_as_json(data_struc, filename):
